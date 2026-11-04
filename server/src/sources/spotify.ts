@@ -126,7 +126,8 @@ export function mapSpotifyPlayer(p: any, now = Date.now()): NowPlaying | null {
       volumePercent: p.device?.supports_volume === false ? null : p.device?.volume_percent ?? null,
     },
     capabilities: {
-      playPause: !restrictions.pausing && !restrictions.resuming,
+      // While playing, Spotify disallows "resuming" (and vice versa), so only check the relevant one.
+      playPause: p.is_playing ? !restrictions.pausing : !restrictions.resuming,
       next: !restrictions.skipping_next,
       previous: !restrictions.skipping_prev,
       seek: !restrictions.seeking,

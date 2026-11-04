@@ -30,7 +30,8 @@ describe('spotify mapping', () => {
     expect(np.track).toMatchObject({ title: 'Windowlicker', artist: 'Aphex Twin', year: 1999, durationMs: 367000 });
     expect(np.track.artUrl).toBe('/api/art?src=' + encodeURIComponent('https://i.scdn.co/image/big'));
     expect(np.device).toMatchObject({ name: 'Kitchen', volumePercent: 42 });
-    expect(np.capabilities.playPause).toBe(false); // resuming disallowed
+    expect(np.capabilities.playPause).toBe(true); // playing: only 'pausing' matters
+    expect(mapSpotifyPlayer({ ...fx('spotify-player.json'), is_playing: false })!.capabilities.playPause).toBe(false);
     expect(np.sampledAt).toBe(5000);
   });
   it('returns null when nothing is playing', () => {
