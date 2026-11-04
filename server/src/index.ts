@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -266,5 +267,24 @@ app.get('/*', (req, reply) => {
 await hub.start();
 await app.listen({ host: '0.0.0.0', port: PORT });
 app.log.info(`nowplaying ${VERSION} listening on :${PORT}`);
+
+// Tailscale Serve only answers HTTPS on :443. With userspace networking, tailnet requests to plain
+// http:// (port 80) are forwarded to 127.0.0.1:80 inside the container, so answer them with a redirect
+// to https:// instead of "connection refused". The port is not published on the host.
+const REDIRECT_PORT = Number(process.env.HTTP_REDIRECT_PORT ?? 80);
+if (REDIRECT_PORT > 0 && REDIRECT_PORT !== PORT) {
+  const redirect = http.createServer((req, res) => {
+    const host = String(req.headers.host ?? '').replace(/:\d+$/, '');
+    const pub = settings().publicUrl.replace(/\/+$/, '');
+    const target = /\.ts\.net$/i.test(host) ? `https://${host}${req.url ?? '/'}` : pub ? `${pub}${req.url ?? '/'}` : '';
+    if (!target) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Use the https:// address.\n');
+      return;
+    }
+    res.writeHead(301, { Location: target, 'Cache-Control': 'no-store' }).end();
+  });
+  redirect.on('error', (e: NodeJS.ErrnoException) => app.log.warn(`http->https redirect on :${REDIRECT_PORT} disabled (${e.code})`));
+  redirect.listen(REDIRECT_PORT, '0.0.0.0', () => app.log.info(`http->https redirect listening on :${REDIRECT_PORT}`));
+}
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => app.close().then(() => process.exit(0)));
