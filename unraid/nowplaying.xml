@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>nowplaying</Name>
+  <Repository>ghcr.io/ckennard/nowplaying:latest</Repository>
+  <Registry>https://github.com/ckennard/nowplaying/pkgs/container/nowplaying</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/ckennard/nowplaying/issues</Support>
+  <Project>https://github.com/ckennard/nowplaying</Project>
+  <Overview>Full-screen now-playing display and ambient visualizer for Spotify and Plex. Shows rich metadata, an up-next queue, synced lyrics and playback controls, including direct Chromecast control for Plex cast sessions. Credentials are entered in the web UI and stored in /config.</Overview>
+  <Category>MediaApp:Music Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:8686]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/ckennard/nowplaying/main/unraid/nowplaying.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/ckennard/nowplaying/main/web/public/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI port" Target="8686" Default="8686" Mode="tcp" Description="Web UI" Type="Port" Display="always" Required="true" Mask="false">8686</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/nowplaying" Mode="rw" Description="Settings, Spotify login and history. Tailscale state is also kept here (/config/.tailscale_state)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nowplaying</Config>
+  <Config Name="TZ" Target="TZ" Default="America/Los_Angeles" Mode="" Description="Timezone" Type="Variable" Display="advanced" Required="false" Mask="false">America/Los_Angeles</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID the app runs as" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID the app runs as" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="Optional. The https:// address used to open the app; only needed if the Spotify redirect URI shown in Settings is wrong." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Plex URL" Target="PLEX_URL" Default="" Mode="" Description="Optional. Overrides the value set in the web UI, e.g. http://192.168.1.69:32400" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Plex token" Target="PLEX_TOKEN" Default="" Mode="" Description="Optional. Overrides the value set in the web UI." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Admin PIN" Target="ADMIN_PIN" Default="" Mode="" Description="Optional PIN required to open Settings." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <TailscaleEnabled>true</TailscaleEnabled>
+  <TailscaleIsExitNode>false</TailscaleIsExitNode>
+  <TailscaleHostname>nowplaying</TailscaleHostname>
+  <TailscaleSSH>false</TailscaleSSH>
+  <TailscaleUserspaceNetworking>true</TailscaleUserspaceNetworking>
+  <TailscaleLANAccess/>
+  <TailscaleServe>serve</TailscaleServe>
+  <TailscaleServePort>8686</TailscaleServePort>
+  <TailscaleWebUI>https://[hostname][magicdns]/</TailscaleWebUI>
+  <TailscaleStateDir/>
+</Container>
