@@ -36,24 +36,31 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
       return next;
     });
 
-  const save = async () => {
+  const save = async (quiet = false): Promise<boolean> => {
     setSaving(true);
     try {
       const { envLocked, ...rest } = s;
       const body = { ...rest, spotify: { clientId: s.spotify.clientId, clientSecret: s.spotify.clientSecret } };
       if (rest.adminPin && rest.adminPin !== '••••••••') try { sessionStorage.setItem('np.pin', rest.adminPin); } catch { /* ignore */ }
       setS(await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) }));
-      setBanner('Saved.');
+      if (!quiet) setBanner('Saved.');
       onSaved();
+      return true;
     } catch (e: any) {
       setBanner('Save failed: ' + e.message);
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
+  // Tests run against saved settings on the server, so save what's in the form first.
   const test = async (svc: string) => {
-    setMsg((m) => ({ ...m, [svc]: { ok: true, message: 'Testing…' } }));
+    setMsg((m) => ({ ...m, [svc]: { ok: true, message: 'Saving and testing…' } }));
+    if (!(await save(true))) {
+      setMsg((m) => ({ ...m, [svc]: { ok: false, message: 'Could not save settings' } }));
+      return;
+    }
     try {
       const r = await api(`/api/test/${svc}`, { method: 'POST', body: '{}' });
       setMsg((m) => ({ ...m, [svc]: r }));
@@ -182,7 +189,7 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
       </div>
       <footer className="settings-foot">
         <span className="muted small">nowplaying v{config.version}</span>
-        <button className="btn btn-cta" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+        <button className="btn btn-cta" disabled={saving} onClick={() => save()}>{saving ? 'Saving…' : 'Save'}</button>
       </footer>
     </Shell>
   );

@@ -62,3 +62,12 @@ describe('settings masking', () => {
     expect(stripMasked({ plex: { url: 'u', token: '••••••••' }, adminPin: '••••••••' })).toEqual({ plex: { url: 'u' } });
   });
 });
+
+import { normalizeServerUrl } from '../src/sources/plex';
+describe('server url normalization', () => {
+  it('adds http:// and trims slashes', () => {
+    expect(normalizeServerUrl(' 192.168.1.69:32400/ ')).toBe('http://192.168.1.69:32400');
+    expect(normalizeServerUrl('https://plex.example.com//')).toBe('https://plex.example.com');
+    expect(normalizeServerUrl('')).toBe('');
+  });
+});

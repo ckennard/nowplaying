@@ -1,12 +1,15 @@
 import { settings } from '../config.js';
 import { encodeArt, fetchJson } from '../http.js';
 import type { NowPlaying, Source } from '../types.js';
+import { normalizeServerUrl } from './plex.js';
 
 /** Read-only fallback for when no Plex token is configured: Tautulli's get_activity. */
 export function tautulliUrl(cmd: string, extra: Record<string, string> = {}): string {
   const s = settings().tautulli;
   const q = new URLSearchParams({ apikey: s.apiKey, cmd, ...extra });
-  return `${s.url.replace(/\/+$/, '')}/api/v2?${q}`;
+  const base = normalizeServerUrl(s.url);
+  if (!base) throw new Error('Set the Tautulli URL and API key, then save');
+  return `${base}/api/v2?${q}`;
 }
 
 const n = (v: unknown) => {

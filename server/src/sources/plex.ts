@@ -5,8 +5,17 @@ import { castControl, castStatus, looksLikeCast } from './cast.js';
 
 const CLIENT_ID = 'nowplaying-display';
 
+/** Normalized server URL: trims trailing slashes and assumes http:// when no scheme is given. */
+export function normalizeServerUrl(raw: string): string {
+  const u = raw.trim().replace(/\/+$/, '');
+  if (!u) return '';
+  return /^https?:\/\//i.test(u) ? u : `http://${u}`;
+}
+
 function base(): string {
-  return settings().plex.url.replace(/\/+$/, '');
+  const u = normalizeServerUrl(settings().plex.url);
+  if (!u) throw new Error('Set the Plex server URL (e.g. http://192.168.1.69:32400) and save');
+  return u;
 }
 
 function headers(): Record<string, string> {
@@ -214,6 +223,7 @@ export async function plexLevels(streamId: number, subsample = 200): Promise<num
 }
 
 export async function plexTest(): Promise<string> {
+  if (!settings().plex.token) throw new Error('Set the Plex token and save');
   const j = await plexGet('/identity');
   const id = await plexGet('/');
   return `Connected to ${id?.MediaContainer?.friendlyName ?? 'Plex'} (v${j?.MediaContainer?.version ?? '?'})`;
