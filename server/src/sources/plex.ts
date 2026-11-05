@@ -103,7 +103,7 @@ export function mapPlexSession(m: any, album?: AlbumInfo, now = Date.now()): Now
       channels: num(audio.channels) ?? num(media.audioChannels),
       transcoding: transcode ? transcode.audioDecision === 'transcode' : undefined,
     },
-    capabilities: { playPause: true, next: true, previous: true, seek: true, volume: viaCast },
+    capabilities: { play: true, pause: true, next: true, previous: true, seek: true, volume: viaCast },
     plexStreamId: num(audio.id),
     viaCast,
     // internal fields used for control; stripped before broadcast

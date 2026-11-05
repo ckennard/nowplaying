@@ -46,7 +46,7 @@ export function mapTautulliSession(x: any, now = Date.now()): NowPlaying {
       channels: n(x.stream_audio_channels) ?? n(x.audio_channels),
       transcoding: x.stream_audio_decision === 'transcode',
     },
-    capabilities: { playPause: false, next: false, previous: false, seek: false, volume: false },
+    capabilities: { play: false, pause: false, next: false, previous: false, seek: false, volume: false },
   };
 }
 

@@ -4,7 +4,7 @@ import type { NowPlaying } from '../src/types';
 
 const np = (source: 'spotify' | 'plex', state: 'playing' | 'paused', id = 'x'): NowPlaying => ({
   source, state, track: { id, title: id, artist: 'a', album: 'b', durationMs: 1000 }, progressMs: 0, sampledAt: 0,
-  device: { name: 'd' }, capabilities: { playPause: true, next: true, previous: true, seek: true, volume: true },
+  device: { name: 'd' }, capabilities: { play: true, pause: true, next: true, previous: true, seek: true, volume: true },
 });
 
 describe('arbiter', () => {

@@ -34,7 +34,7 @@ export function Controls(p: Props) {
     <div className={`controls ${p.visible ? 'show' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
       <div className="controls-group">
         <button className="btn" disabled={!caps?.previous || p.busy} onClick={() => p.onCommand({ type: 'previous' })} aria-label="Previous"><IconPrev /></button>
-        <button className="btn btn-primary" disabled={!caps?.playPause || p.busy} onClick={() => p.onCommand({ type: np?.state === 'playing' ? 'pause' : 'play' })} aria-label={np?.state === 'playing' ? 'Pause' : 'Play'}>
+        <button className="btn btn-primary" disabled={!(np?.state === 'playing' ? caps?.pause : caps?.play) || p.busy} onClick={() => p.onCommand({ type: np?.state === 'playing' ? 'pause' : 'play' })} aria-label={np?.state === 'playing' ? 'Pause' : 'Play'}>
           {np?.state === 'playing' ? <IconPause size={30} /> : <IconPlay size={30} />}
         </button>
         <button className="btn" disabled={!caps?.next || p.busy} onClick={() => p.onCommand({ type: 'next' })} aria-label="Next"><IconNext /></button>

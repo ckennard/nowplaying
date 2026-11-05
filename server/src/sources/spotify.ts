@@ -126,8 +126,8 @@ export function mapSpotifyPlayer(p: any, now = Date.now()): NowPlaying | null {
       volumePercent: p.device?.supports_volume === false ? null : p.device?.volume_percent ?? null,
     },
     capabilities: {
-      // Only the action the toggle would send matters: Spotify often (not always) lists the other one as disallowed.
-      playPause: p.is_playing ? !restrictions.pausing : !restrictions.resuming,
+      play: !restrictions.resuming,
+      pause: !restrictions.pausing,
       next: !restrictions.skipping_next,
       previous: !restrictions.skipping_prev,
       seek: !restrictions.seeking,

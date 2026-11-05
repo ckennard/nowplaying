@@ -20,7 +20,7 @@ export function demoState(startedAt: number, now = Date.now()): BroadcastState {
       source: 'plex', state: 'playing', track: t, progressMs: elapsed % t.durationMs, sampledAt: now,
       device: { name: 'Chromecast Audio', type: 'Plex Cast', volumePercent: 55 },
       quality: { codec: 'FLAC', bitDepth: 24, sampleRateHz: 48000, bitrateKbps: 2304, channels: 2, transcoding: false },
-      capabilities: { playPause: true, next: true, previous: true, seek: true, volume: true }, viaCast: true,
+      capabilities: { play: true, pause: true, next: true, previous: true, seek: true, volume: true }, viaCast: true,
     },
     sessions: {},
     pin: null,

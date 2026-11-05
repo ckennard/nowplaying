@@ -8,7 +8,7 @@ export interface NowPlaying {
   source: SourceId; state: 'playing' | 'paused' | 'stopped'; track: Track; progressMs: number; sampledAt: number;
   device: { name: string; type?: string; volumePercent?: number | null };
   quality?: { codec?: string; bitrateKbps?: number; sampleRateHz?: number; bitDepth?: number; channels?: number; transcoding?: boolean };
-  capabilities: { playPause: boolean; next: boolean; previous: boolean; seek: boolean; volume: boolean };
+  capabilities: { play: boolean; pause: boolean; next: boolean; previous: boolean; seek: boolean; volume: boolean };
   plexStreamId?: number; viaCast?: boolean;
 }
 export interface SourceStatus { configured: boolean; ok: boolean; error?: string; lastPoll?: number }

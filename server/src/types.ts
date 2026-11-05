@@ -28,7 +28,8 @@ export interface Quality {
 }
 
 export interface Capabilities {
-  playPause: boolean;
+  play: boolean;
+  pause: boolean;
   next: boolean;
   previous: boolean;
   seek: boolean;

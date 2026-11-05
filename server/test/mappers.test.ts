@@ -30,11 +30,9 @@ describe('spotify mapping', () => {
     expect(np.track).toMatchObject({ title: 'Windowlicker', artist: 'Aphex Twin', year: 1999, durationMs: 367000 });
     expect(np.track.artUrl).toBe('/api/art?src=' + encodeURIComponent('https://i.scdn.co/image/big'));
     expect(np.device).toMatchObject({ name: 'Kitchen', volumePercent: 42 });
-    expect(np.capabilities.playPause).toBe(true); // playing: only 'pausing' matters
-    const base = fx('spotify-player.json');
-    expect(mapSpotifyPlayer({ ...base, is_playing: true, actions: { disallows: { pausing: true } } })!.capabilities.playPause).toBe(false);
-    expect(mapSpotifyPlayer({ ...base, is_playing: false, actions: { disallows: { pausing: true } } })!.capabilities.playPause).toBe(true);
-    expect(mapSpotifyPlayer({ ...base, is_playing: false, actions: { disallows: { pausing: true, resuming: true } } })!.capabilities.playPause).toBe(false);
+    expect(np.capabilities).toMatchObject({ pause: true, play: false }); // fixture disallows resuming
+    const paused = mapSpotifyPlayer({ ...fx('spotify-player.json'), is_playing: false, actions: { disallows: { pausing: true } } })!;
+    expect(paused.capabilities).toMatchObject({ play: true, pause: false });
     expect(np.sampledAt).toBe(5000);
   });
   it('returns null when nothing is playing', () => {
@@ -47,7 +45,7 @@ describe('tautulli mapping', () => {
   it('maps get_activity session', () => {
     const np = mapTautulliSession({ media_type: 'track', state: 'paused', rating_key: '1', title: 'T', grandparent_title: 'A', parent_title: 'B', parent_year: '2001', duration: '1000', view_offset: '10', parent_thumb: '/x', player: 'Phone', stream_audio_codec: 'mp3' });
     expect(np).toMatchObject({ state: 'paused', track: { title: 'T', artist: 'A', year: 2001 }, quality: { codec: 'MP3' } });
-    expect(np.capabilities.playPause).toBe(false);
+    expect(np.capabilities).toMatchObject({ play: false, pause: false });
   });
 });
 
