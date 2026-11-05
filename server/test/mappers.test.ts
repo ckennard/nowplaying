@@ -31,7 +31,10 @@ describe('spotify mapping', () => {
     expect(np.track.artUrl).toBe('/api/art?src=' + encodeURIComponent('https://i.scdn.co/image/big'));
     expect(np.device).toMatchObject({ name: 'Kitchen', volumePercent: 42 });
     expect(np.capabilities.playPause).toBe(true); // playing: only 'pausing' matters
-    expect(mapSpotifyPlayer({ ...fx('spotify-player.json'), is_playing: false })!.capabilities.playPause).toBe(false);
+    const base = fx('spotify-player.json');
+    expect(mapSpotifyPlayer({ ...base, is_playing: true, actions: { disallows: { pausing: true } } })!.capabilities.playPause).toBe(false);
+    expect(mapSpotifyPlayer({ ...base, is_playing: false, actions: { disallows: { pausing: true } } })!.capabilities.playPause).toBe(true);
+    expect(mapSpotifyPlayer({ ...base, is_playing: false, actions: { disallows: { pausing: true, resuming: true } } })!.capabilities.playPause).toBe(false);
     expect(np.sampledAt).toBe(5000);
   });
   it('returns null when nothing is playing', () => {

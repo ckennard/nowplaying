@@ -91,7 +91,7 @@ export function App() {
       if (settingsOpen || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       switch (e.key.toLowerCase()) {
-        case ' ': e.preventDefault(); if (np) send({ type: np.state === 'playing' ? 'pause' : 'play' }); break;
+        case ' ': e.preventDefault(); if (np?.capabilities.playPause) send({ type: np.state === 'playing' ? 'pause' : 'play' }); break;
         case 'arrowright': if (np?.capabilities.next) send({ type: 'next' }); break;
         case 'arrowleft': if (np?.capabilities.previous) send({ type: 'previous' }); break;
         case 'q': setPanel((p) => (p === 'queue' ? null : 'queue')); break;
