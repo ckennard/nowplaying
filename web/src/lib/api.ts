@@ -1,4 +1,4 @@
-import type { SourceId } from '../types';
+import type { ControlCommand, SourceId } from '../types';
 
 export function pinHeader(): Record<string, string> {
   try {
@@ -19,7 +19,7 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
   return j as T;
 }
 
-export function control(cmd: Record<string, unknown> & { type: string }, source?: SourceId) {
+export function control(cmd: ControlCommand, source?: SourceId) {
   return api('/api/control', { method: 'POST', body: JSON.stringify({ ...cmd, source }) });
 }
 

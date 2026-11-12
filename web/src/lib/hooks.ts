@@ -22,8 +22,22 @@ export function useLiveState() {
     }
     let es: EventSource | null = null;
     let retry: number | undefined;
+    let reload: number | undefined;
+    let version: string | null = null;
+    // The server announces its build on every (re)connect. A different one means this tab is running an
+    // old bundle, so reload; an always-on display would otherwise keep it until someone noticed.
+    const onVersion = (e: MessageEvent) => {
+      if (version === null) { version = e.data; return; }
+      if (version === e.data || reload !== undefined) return;
+      const go = () => {
+        if (location.hash.startsWith('#settings')) reload = window.setTimeout(go, 15_000); // don't discard a half-filled form
+        else location.reload();
+      };
+      go();
+    };
     const open = () => {
       es = new EventSource('/api/stream');
+      es.addEventListener('version', onVersion);
       es.onopen = () => setConnected(true);
       es.onmessage = (e) => {
         const s = JSON.parse(e.data) as BroadcastState;
@@ -39,7 +53,7 @@ export function useLiveState() {
       };
     };
     open();
-    return () => { es?.close(); clearTimeout(retry); };
+    return () => { es?.close(); clearTimeout(retry); clearTimeout(reload); };
   }, []);
   return { state, connected, clockOffset: offset };
 }

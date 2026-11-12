@@ -11,7 +11,13 @@ export async function fetchJson<T = any>(url: string, init: RequestInit & { time
   const text = await res.text();
   if (!res.ok) {
     const ra = Number(res.headers.get('retry-after'));
-    throw new HttpError(res.status, `${res.status} ${res.statusText}: ${text.slice(0, 200)}`, Number.isFinite(ra) ? ra : undefined);
+    // Prefer the API's own message (Spotify: {"error":{"message":"…"}}) over a raw body dump.
+    let detail = text.slice(0, 200);
+    try {
+      const j = JSON.parse(text);
+      detail = j?.error?.message ?? (typeof j?.error === 'string' ? j.error : detail);
+    } catch { /* not JSON */ }
+    throw new HttpError(res.status, `${res.status} ${res.statusText}: ${detail}`, Number.isFinite(ra) ? ra : undefined);
   }
   if (!text) return null;
   try {

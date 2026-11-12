@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { loadSettings, redactedSettings, settings, stripMasked, updateSettings } from './config.js';
-import { Hub } from './hub.js';
+import { ControlRejected, Hub, parseControl } from './hub.js';
 import { plexArtUrl, plexLevels, plexTest } from './sources/plex.js';
 import { spotifyAuthorizeUrl, spotifyHandleCallback, spotifyTest } from './sources/spotify.js';
 import { tautulliTest, tautulliUrl } from './sources/tautulli.js';
 import { castStatus } from './sources/cast.js';
-import type { ControlCommand, SourceId } from './types.js';
+import type { SourceId } from './types.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(here, '../../package.json'), 'utf8'));
@@ -20,7 +20,8 @@ const PORT = Number(process.env.PORT || 8686);
 
 await loadSettings();
 const hub = new Hub();
-const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' }, trustProxy: true });
+// forceCloseConnections: open event streams would otherwise keep close() pending until Docker kills the container.
+const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' }, trustProxy: true, forceCloseConnections: true });
 
 // ---------- helpers ----------
 function baseUrl(req: FastifyRequest): string {
@@ -71,7 +72,8 @@ app.get('/api/stream', (req, reply) => {
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
-  res.write('retry: 3000\n\n');
+  // The page reloads itself when this changes, so always-on displays pick up a new build after an update.
+  res.write(`retry: 3000\nevent: version\ndata: ${JSON.stringify(VERSION)}\n\n`);
   const unsub = hub.subscribe((s) => res.write(`data: ${JSON.stringify(s)}\n\n`));
   const hb = setInterval(() => res.write(': hb\n\n'), 20_000);
   req.raw.on('close', () => { clearInterval(hb); unsub(); });
@@ -82,21 +84,23 @@ app.get('/api/state', async () => hub.snapshot());
 app.get('/api/health', async () => ({ ok: true, version: VERSION, uptimeSec: Math.round(process.uptime()), sources: hub.statusSummary() }));
 
 // ---------- controls ----------
-app.post<{ Body: ControlCommand & { source?: SourceId } }>('/api/control', async (req, reply) => {
-  const { source, ...cmd } = req.body ?? ({} as any);
-  const valid = ['play', 'pause', 'next', 'previous', 'seek', 'volume'];
-  if (!valid.includes((cmd as any).type)) return reply.code(400).send({ error: 'Unknown command' });
+const isSource = (v: unknown): v is SourceId => v === 'spotify' || v === 'plex';
+app.post<{ Body: { source?: unknown } }>('/api/control', async (req, reply) => {
+  const cmd = parseControl(req.body);
+  const source = req.body?.source ?? undefined;
+  if (!cmd) return reply.code(400).send({ error: 'Unknown command' });
+  if (source !== undefined && !isSource(source)) return reply.code(400).send({ error: 'Unknown source' });
   try {
-    await hub.control(cmd as ControlCommand, source);
+    await hub.control(cmd, source);
     return { ok: true };
   } catch (e: any) {
-    return reply.code(502).send({ error: e.message });
+    return reply.code(e instanceof ControlRejected ? 409 : 502).send({ error: e.message });
   }
 });
 
 app.post<{ Body: { pin: SourceId | null } }>('/api/pin', async (req) => {
   const p = req.body?.pin;
-  hub.setPin(p === 'spotify' || p === 'plex' ? p : null);
+  hub.setPin(isSource(p) ? p : null);
   return { pin: hub.pin };
 });
 
@@ -107,17 +111,20 @@ function isAllowedRemote(u: URL) {
 }
 app.get<{ Querystring: { src?: string } }>('/api/art', async (req, reply) => {
   const src = req.query.src ?? '';
-  let url: string;
-  if (src.startsWith('plex:/')) url = plexArtUrl(src.slice(5));
-  else if (src.startsWith('tautulli:/')) url = tautulliUrl('pms_image_proxy', { img: src.slice(9), width: '1000', height: '1000', fallback: 'cover' });
-  else {
-    let u: URL;
-    try { u = new URL(src); } catch { return reply.code(400).send({ error: 'bad src' }); }
-    if (!isAllowedRemote(u)) return reply.code(400).send({ error: 'host not allowed' });
-    url = u.toString();
-  }
   let hit = artCache.get(src);
   if (!hit) {
+    let url: string;
+    try {
+      if (src.startsWith('plex:/')) url = plexArtUrl(src.slice(5));
+      else if (src.startsWith('tautulli:/')) url = tautulliUrl('pms_image_proxy', { img: src.slice(9), width: '1000', height: '1000', fallback: 'cover' });
+      else {
+        const u = new URL(src);
+        if (!isAllowedRemote(u)) return reply.code(400).send({ error: 'host not allowed' });
+        url = u.toString();
+      }
+    } catch {
+      return reply.code(400).send({ error: 'bad src' }); // not a URL, or the server it points at is not configured
+    }
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
       if (!r.ok) return reply.code(r.status === 404 ? 404 : 502).send();
@@ -142,32 +149,38 @@ app.get<{ Querystring: { artist?: string; title?: string; album?: string; durati
   if (album) q.set('album_name', album);
   if (Number(durationMs) > 0) q.set('duration', String(Math.round(Number(durationMs) / 1000)));
   const headers = { 'User-Agent': `nowplaying/${VERSION} (https://github.com/ckennard/nowplaying)` };
+  // A 404 is a real "no lyrics"; any other failure (rate limit, outage) must not be cached as one.
+  let definitive = true;
+  const get = async (url: string): Promise<any> => {
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    if (r.ok) return r.json();
+    if (r.status !== 404) definitive = false;
+    return null;
+  };
   try {
-    let r = await fetch(`https://lrclib.net/api/get?${q}`, { headers, signal: AbortSignal.timeout(8000) });
-    let j: any = r.ok ? await r.json() : null;
+    let j: any = await get(`https://lrclib.net/api/get?${q}`);
     if (!j) {
       // fall back to a search without album/duration constraints
-      r = await fetch(`https://lrclib.net/api/search?${new URLSearchParams({ artist_name: artist, track_name: title })}`, { headers, signal: AbortSignal.timeout(8000) });
-      const list: any[] = r.ok ? await r.json() : [];
+      const list: any[] = (await get(`https://lrclib.net/api/search?${new URLSearchParams({ artist_name: artist, track_name: title })}`)) ?? [];
       j = list.find((x) => x.syncedLyrics) ?? list[0] ?? null;
     }
     const out = { synced: j?.syncedLyrics ?? null, plain: j?.plainLyrics ?? null, instrumental: Boolean(j?.instrumental) };
-    lyricsCache.set(key, out);
+    if (j || definitive) lyricsCache.set(key, out);
     return out;
   } catch {
     return { synced: null, plain: null, instrumental: false };
   }
 });
 
-const levelsCache = new Lru<number[] | null>(100);
+const levelsCache = new Lru<number[]>(100);
 app.get<{ Querystring: { streamId?: string } }>('/api/plex/levels', async (req) => {
   const id = Number(req.query.streamId);
   if (!Number.isFinite(id)) return { levels: null };
   const k = String(id);
-  let levels = levelsCache.get(k);
-  if (levels === undefined) {
+  let levels: number[] | null | undefined = levelsCache.get(k);
+  if (!levels) {
     levels = await plexLevels(id, 240);
-    levelsCache.set(k, levels);
+    if (levels) levelsCache.set(k, levels); // a failed lookup is retried next time rather than remembered
   }
   return { levels };
 });
@@ -260,7 +273,8 @@ await app.register(fastifyStatic, {
   },
 });
 app.get('/*', (req, reply) => {
-  if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'Not found' });
+  // Unknown API routes and build assets from an older bundle are real 404s, not the app shell.
+  if (req.url.startsWith('/api/') || req.url.startsWith('/assets/')) return reply.code(404).send({ error: 'Not found' });
   return reply.sendFile('index.html');
 });
 

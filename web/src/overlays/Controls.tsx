@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { IconFull, IconGear, IconInfo, IconLyrics, IconMic, IconNext, IconPause, IconPlay, IconPrev, IconQueue, IconVolume, IconWave } from '../icons';
-import type { NowPlaying, VizMode } from '../types';
+import { toggleCommand } from '../lib/playback';
+import type { ControlCommand, NowPlaying, VizMode } from '../types';
 
 export type Panel = 'queue' | 'details' | null;
 
@@ -12,7 +13,7 @@ interface Props {
   viz: VizMode;
   micOn: boolean;
   busy: boolean;
-  onCommand: (cmd: { type: string; [k: string]: unknown }) => void;
+  onCommand: (cmd: ControlCommand) => void;
   onPanel: (p: Panel) => void;
   onLyrics: () => void;
   onViz: () => void;
@@ -26,16 +27,20 @@ const VIZ_LABEL: Record<VizMode, string> = { aurora: 'Aurora', art: 'Album glow'
 export function Controls(p: Props) {
   const np = p.np;
   const caps = np?.capabilities;
+  const toggle = toggleCommand(np);
+  const playing = toggle.type === 'pause';
   const [vol, setVol] = useState<number | null>(np?.device.volumePercent ?? null);
   const [dragging, setDragging] = useState(false);
   useEffect(() => { if (!dragging) setVol(np?.device.volumePercent ?? null); }, [np?.device.volumePercent, dragging]);
+  // Ends the local edit so the slider follows the player again, and sends the chosen level.
+  const commitVolume = (el: HTMLInputElement) => { setDragging(false); p.onCommand({ type: 'volume', percent: Number(el.value) }); };
 
   return (
     <div className={`controls ${p.visible ? 'show' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
       <div className="controls-group">
         <button className="btn" disabled={!caps?.previous || p.busy} onClick={() => p.onCommand({ type: 'previous' })} aria-label="Previous"><IconPrev /></button>
-        <button className="btn btn-primary" disabled={!(np?.state === 'playing' ? caps?.pause : caps?.play) || p.busy} onClick={() => p.onCommand({ type: np?.state === 'playing' ? 'pause' : 'play' })} aria-label={np?.state === 'playing' ? 'Pause' : 'Play'}>
-          {np?.state === 'playing' ? <IconPause size={30} /> : <IconPlay size={30} />}
+        <button className="btn btn-primary" disabled={!toggle.enabled || p.busy} onClick={() => p.onCommand({ type: toggle.type })} aria-label={playing ? 'Pause' : 'Play'}>
+          {playing ? <IconPause size={30} /> : <IconPlay size={30} />}
         </button>
         <button className="btn" disabled={!caps?.next || p.busy} onClick={() => p.onCommand({ type: 'next' })} aria-label="Next"><IconNext /></button>
       </div>
@@ -45,8 +50,10 @@ export function Controls(p: Props) {
           <input
             type="range" min={0} max={100} value={vol}
             onChange={(e) => { setDragging(true); setVol(Number(e.target.value)); }}
-            onPointerUp={(e) => { setDragging(false); p.onCommand({ type: 'volume', percent: Number((e.target as HTMLInputElement).value) }); }}
-            onKeyUp={(e) => p.onCommand({ type: 'volume', percent: Number((e.target as HTMLInputElement).value) })}
+            onPointerUp={(e) => commitVolume(e.currentTarget)}
+            onPointerCancel={() => setDragging(false)}
+            onBlur={() => setDragging(false)}
+            onKeyUp={(e) => { if (dragging) commitVolume(e.currentTarget); }}
           />
           <span className="vol-num">{vol}</span>
         </label>

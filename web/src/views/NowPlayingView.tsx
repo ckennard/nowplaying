@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtTime, parseLrc, SOURCE_LABEL, type LrcLine } from '../lib/format';
+import { useProgress } from '../lib/hooks';
 import type { NowPlaying } from '../types';
 
 interface Props {
   np: NowPlaying;
-  progressMs: number;
+  /** Client-server clock offset; the position is interpolated in the parts that show it, so only they re-render. */
+  clockOffset: React.MutableRefObject<number>;
   showLyrics: boolean;
   kickRef: React.MutableRefObject<number>;
   onSeek?: (ms: number) => void;
 }
 
-export function NowPlayingView({ np, progressMs, showLyrics, kickRef, onSeek }: Props) {
+export function NowPlayingView({ np, clockOffset, showLyrics, kickRef, onSeek }: Props) {
   const t = np.track;
   const artRef = useRef<HTMLDivElement>(null);
   // Track which URL finished loading (cached images can load before effects run).
@@ -18,12 +20,14 @@ export function NowPlayingView({ np, progressMs, showLyrics, kickRef, onSeek }: 
 
   // Pulse the art with the mic's bass kick (no-op when the mic is off).
   useEffect(() => {
-    let raf = 0, s = 1;
+    let raf = 0, s = 1, shown = '';
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const target = 1 + kickRef.current * 0.035;
       s += (target - s) * 0.25;
-      if (artRef.current) artRef.current.style.transform = `scale(${s.toFixed(4)})`;
+      const next = `scale(${s.toFixed(4)})`;
+      if (next === shown || !artRef.current) return; // at rest: no style writes
+      artRef.current.style.transform = shown = next;
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -61,14 +65,15 @@ export function NowPlayingView({ np, progressMs, showLyrics, kickRef, onSeek }: 
         </h1>
         <div className="np-artist">{t.artist}</div>
         {subtitle && <div className="np-album">{subtitle}</div>}
-        {showLyrics && <Lyrics np={np} progressMs={progressMs} />}
-        <Progress np={np} progressMs={progressMs} onSeek={np.capabilities.seek ? onSeek : undefined} />
+        {showLyrics && <Lyrics np={np} clockOffset={clockOffset} />}
+        <Progress np={np} clockOffset={clockOffset} onSeek={np.capabilities.seek ? onSeek : undefined} />
       </section>
     </main>
   );
 }
 
-function Progress({ np, progressMs, onSeek }: { np: NowPlaying; progressMs: number; onSeek?: (ms: number) => void }) {
+function Progress({ np, clockOffset, onSeek }: { np: NowPlaying; clockOffset: Props['clockOffset']; onSeek?: (ms: number) => void }) {
+  const progressMs = useProgress(np, clockOffset);
   const dur = np.track.durationMs;
   const frac = dur ? Math.min(1, progressMs / dur) : 0;
   const [levels, setLevels] = useState<number[] | null>(null);
@@ -132,7 +137,8 @@ function Progress({ np, progressMs, onSeek }: { np: NowPlaying; progressMs: numb
   );
 }
 
-function Lyrics({ np, progressMs }: { np: NowPlaying; progressMs: number }) {
+function Lyrics({ np, clockOffset }: { np: NowPlaying; clockOffset: Props['clockOffset'] }) {
+  const progressMs = useProgress(np, clockOffset);
   const [lines, setLines] = useState<LrcLine[] | null>(null);
   const [plain, setPlain] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'none' | 'ok' | 'instrumental'>('loading');

@@ -146,14 +146,17 @@ export class PlexSource implements Source {
     const j = await plexGet('/status/sessions');
     const list: any[] = (j?.MediaContainer?.Metadata ?? []).filter((m: any) => m.type === 'track');
     if (!list.length) return null;
-    // Prefer a playing session over paused ones; among equals, the furthest-along (most recently active) one.
-    list.sort((a, b) => Number(b.Player?.state === 'playing') - Number(a.Player?.state === 'playing'));
+    // Prefer a playing (or buffering) session over paused ones.
+    const active = (m: any) => Number(m.Player?.state === 'playing' || m.Player?.state === 'buffering');
+    list.sort((a, b) => active(b) - active(a));
     const m = list[0];
     const album = await albumInfo(m.parentRatingKey);
     const np = mapPlexSession(m, album);
     if (np.viaCast) {
       this.refreshCast(np);
       np.device.volumePercent = this.castInfo.volume ?? null;
+    } else {
+      this.lastPlayQueue = {}; // the id came from a Chromecast; it does not describe this player's queue
     }
     return np;
   }
@@ -224,8 +227,7 @@ export async function plexLevels(streamId: number, subsample = 200): Promise<num
 
 export async function plexTest(): Promise<string> {
   if (!settings().plex.token) throw new Error('Set the Plex token and save');
-  const j = await plexGet('/identity');
-  const id = await plexGet('/');
+  const [j, id] = await Promise.all([plexGet('/identity'), plexGet('/')]);
   return `Connected to ${id?.MediaContainer?.friendlyName ?? 'Plex'} (v${j?.MediaContainer?.version ?? '?'})`;
 }
 

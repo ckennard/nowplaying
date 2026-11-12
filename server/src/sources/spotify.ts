@@ -84,6 +84,7 @@ function bestImage(images: any[] | undefined): string | undefined {
 
 export function mapSpotifyItem(item: any): Track {
   if (item?.type === 'episode') {
+    const art = bestImage(item.images ?? item.show?.images);
     return {
       id: item.id,
       title: item.name,
@@ -91,7 +92,7 @@ export function mapSpotifyItem(item: any): Track {
       album: item.show?.name ?? '',
       year: item.release_date ? Number(String(item.release_date).slice(0, 4)) : undefined,
       durationMs: item.duration_ms ?? 0,
-      artUrl: bestImage(item.images ?? item.show?.images) ? encodeArt(bestImage(item.images ?? item.show?.images)!) : undefined,
+      artUrl: art ? encodeArt(art) : undefined,
       explicit: item.explicit,
     };
   }

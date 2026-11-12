@@ -9,6 +9,32 @@ import type { BroadcastState, ControlCommand, HistoryItem, NowPlaying, Source, S
 
 const HISTORY_FILE = path.join(CONFIG_DIR, 'history.json');
 const HISTORY_MAX = 40;
+/** A source that keeps failing stops showing its last known session after this long. */
+const STALE_AFTER_MS = 60_000;
+
+/** A command that can't apply to the current session (as opposed to an upstream failure). */
+export class ControlRejected extends Error {}
+
+/** Validates an untrusted request body into a command; null when it isn't one. */
+export function parseControl(body: any): ControlCommand | null {
+  switch (body?.type) {
+    case 'play': case 'pause': case 'next': case 'previous':
+      return { type: body.type };
+    case 'seek':
+      return Number.isFinite(body.positionMs) ? { type: 'seek', positionMs: body.positionMs } : null;
+    case 'volume':
+      return Number.isFinite(body.percent) ? { type: 'volume', percent: body.percent } : null;
+    default:
+      return null;
+  }
+}
+
+/** The single place capabilities are enforced, so every client (and stale tab) gets the same answer. */
+export function checkControl(cmd: ControlCommand, np: NowPlaying | null): NowPlaying {
+  if (!np) throw new ControlRejected('Nothing is playing');
+  if (!np.capabilities[cmd.type]) throw new ControlRejected(`This player does not allow "${cmd.type}" right now`);
+  return np;
+}
 
 /** Picks Plex (token) over Tautulli (read-only) depending on what's configured right now. */
 class PlexOrTautulli implements Source {
@@ -26,7 +52,10 @@ class PlexOrTautulli implements Source {
 /** Remove internal `_`-prefixed fields before sending to the browser. */
 export function publicNp(np: NowPlaying | null): NowPlaying | null {
   if (!np) return null;
-  return Object.fromEntries(Object.entries(np).filter(([k]) => !k.startsWith('_'))) as unknown as NowPlaying;
+  const out = Object.fromEntries(Object.entries(np).filter(([k]) => !k.startsWith('_'))) as unknown as NowPlaying;
+  // Deprecated combined flag, kept so tabs loaded before the play/pause split keep working until they reload.
+  const playPause = np.state === 'playing' ? np.capabilities.pause : np.capabilities.play;
+  return { ...out, capabilities: { ...np.capabilities, playPause } as NowPlaying['capabilities'] };
 }
 
 export class Hub {
@@ -37,6 +66,9 @@ export class Hub {
     plex: { configured: false, ok: false },
   };
   private timers: Partial<Record<SourceId, NodeJS.Timeout>> = {};
+  /** Latest poll number per source; a poll that finishes after a newer one started is discarded. */
+  private pollSeq: Record<SourceId, number> = { spotify: 0, plex: 0 };
+  private failingSince: Partial<Record<SourceId, number>> = {};
   private listeners = new Set<(s: BroadcastState) => void>();
   private history: HistoryItem[] = [];
   private queue: Track[] = [];
@@ -47,7 +79,8 @@ export class Hub {
 
   async start() {
     try {
-      this.history = JSON.parse(await fs.readFile(HISTORY_FILE, 'utf8'));
+      const saved = JSON.parse(await fs.readFile(HISTORY_FILE, 'utf8'));
+      if (Array.isArray(saved)) this.history = saved;
     } catch { /* first run */ }
     for (const id of Object.keys(this.sources) as SourceId[]) this.schedule(id, 0);
     if (!this.history.length) this.seedHistory().catch(() => {});
@@ -75,17 +108,24 @@ export class Hub {
 
   private async tick(id: SourceId) {
     const src = this.sources[id];
+    const seq = ++this.pollSeq[id];
     let np: NowPlaying | null = null;
     const configured = src.isConfigured();
     if (configured) {
       try {
         np = await src.poll();
+        if (seq !== this.pollSeq[id]) return; // a newer poll (e.g. after a command) owns the state now
+        delete this.failingSince[id];
         this.status[id] = { configured, ok: true, lastPoll: Date.now() };
       } catch (e: any) {
-        np = this.tracked[id].np; // keep showing the last known state through transient errors
+        if (seq !== this.pollSeq[id]) return;
+        // Keep showing the last known state through transient errors, but not forever.
+        const since = (this.failingSince[id] ??= Date.now());
+        np = Date.now() - since < STALE_AFTER_MS ? this.tracked[id].np : null;
         this.status[id] = { configured, ok: false, error: e.message, lastPoll: Date.now() };
       }
     } else {
+      delete this.failingSince[id];
       this.status[id] = { configured: false, ok: false };
     }
     this.update(id, np);
@@ -96,7 +136,8 @@ export class Hub {
     const now = Date.now();
     const prev = this.tracked[id];
     this.tracked[id] = track(prev, np, now);
-    if (np?.state === 'playing' && prev.np?.track.id !== np.track.id) this.addHistory(np, now);
+    // A new track, or one that was only ever seen paused; addHistory drops repeats of the latest entry.
+    if (np?.state === 'playing' && (prev.np?.state !== 'playing' || prev.np.track.id !== np.track.id)) this.addHistory(np, now);
     this.refreshQueue().catch(() => {});
     this.emit();
   }
@@ -124,18 +165,19 @@ export class Hub {
     if (key === this.queueKey && Date.now() - this.queueAt < 30_000) return;
     this.queueKey = key;
     this.queueAt = Date.now();
+    let queue: Track[] = [];
     try {
-      this.queue = await this.sources[id].queue(np);
-    } catch {
-      this.queue = [];
-    }
+      queue = await this.sources[id].queue(np);
+    } catch { /* no queue */ }
+    if (this.queueKey !== key) return; // the track changed while this was in flight
+    this.queue = queue;
     this.emit();
   }
 
   async control(cmd: ControlCommand, source?: SourceId) {
     const id = source ?? this.activeId();
-    if (!id) throw new Error('Nothing is playing');
-    await this.sources[id].control(cmd, this.tracked[id].np);
+    if (!id) throw new ControlRejected('Nothing is playing');
+    await this.sources[id].control(cmd, checkControl(cmd, this.tracked[id].np));
     if (cmd.type === 'next' || cmd.type === 'previous') this.queueAt = 0;
     this.poke(id, 350);
     setTimeout(() => this.poke(id, 0), 1500);

@@ -28,6 +28,8 @@ export function Visualizer({ mode, palette, artUrl, micOn, onKick }: Props) {
     }
     const c2d = c2dRef.current;
     const ctx = mode === 'spectrum' ? c2d?.getContext('2d') : null;
+    // Nothing to animate (album glow / off with the mic off): don't keep a frame loop running.
+    if (!aurora && !ctx && !micOn) { kickCb.current?.(0); return; }
     let raf = 0;
     let last = 0;
     const t0 = performance.now();

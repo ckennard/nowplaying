@@ -33,6 +33,7 @@ export class Mic {
     this.ctx = undefined;
     this.stream = undefined;
     this.smoothedEnergy = 0;
+    this.freq = new Uint8Array(0); // otherwise the spectrum freezes on the last frame
   }
 
   /** Updates the frequency buffer; returns overall energy 0..1 and a bass "kick" 0..1. */

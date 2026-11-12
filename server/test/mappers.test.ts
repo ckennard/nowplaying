@@ -4,7 +4,7 @@ import { mapPlexSession } from '../src/sources/plex';
 import { mapSpotifyPlayer } from '../src/sources/spotify';
 import { mapTautulliSession } from '../src/sources/tautulli';
 import { decodeCastMessage, encodeCastMessage } from '../src/sources/cast';
-import { stripMasked } from '../src/config';
+import { sanitize, stripMasked } from '../src/config';
 
 const fx = (n: string) => JSON.parse(readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8'));
 
@@ -35,6 +35,12 @@ describe('spotify mapping', () => {
     expect(paused.capabilities).toMatchObject({ play: true, pause: false });
     expect(np.sampledAt).toBe(5000);
   });
+  it('allows everything when Spotify reports no restrictions', () => {
+    const { actions, ...bare } = fx('spotify-player.json');
+    for (const p of [bare, { ...bare, actions: {} }]) {
+      expect(mapSpotifyPlayer(p)!.capabilities).toEqual({ play: true, pause: true, next: true, previous: true, seek: true, volume: true });
+    }
+  });
   it('returns null when nothing is playing', () => {
     expect(mapSpotifyPlayer(null)).toBeNull();
     expect(mapSpotifyPlayer({ is_playing: false, item: null })).toBeNull();
@@ -56,6 +62,15 @@ describe('cast protobuf', () => {
     expect(frame.readUInt32BE(0)).toBe(frame.length - 4);
     const m = decodeCastMessage(frame.subarray(4));
     expect(m).toEqual({ source: 'sender-0', dest: 'receiver-0', namespace: 'urn:x-cast:com.google.cast.receiver', payload });
+  });
+});
+
+describe('settings sanitizing', () => {
+  it('clamps display timeouts and rejects unknown visualizers', () => {
+    const base: any = { ui: { overlayTimeoutSec: 0, panelTimeoutSec: NaN, defaultViz: 'lasers', lyrics: true, wakeLock: false } };
+    expect(sanitize(base).ui).toEqual({ overlayTimeoutSec: 2, panelTimeoutSec: 45, defaultViz: 'aurora', lyrics: true, wakeLock: false });
+    const ok: any = { ui: { overlayTimeoutSec: 10, panelTimeoutSec: 60, defaultViz: 'art', lyrics: false, wakeLock: true } };
+    expect(sanitize(ok).ui).toEqual(ok.ui);
   });
 });
 

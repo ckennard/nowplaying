@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconClose } from '../icons';
 import { api } from '../lib/api';
 import type { PublicConfig } from '../types';
 
 type S = any;
+const MASK = '••••••••';
 
 export function Settings({ config, onClose, onSaved }: { config: PublicConfig; onClose: () => void; onSaved: () => void }) {
   const [s, setS] = useState<S | null>(null);
@@ -12,6 +13,8 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
   const [msg, setMsg] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  /** Secret fields emptied by focusing them; restored on blur unless the user actually typed. */
+  const focusCleared = useRef(new Set<string>());
 
   const load = () =>
     api('/api/settings')
@@ -41,8 +44,9 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
     try {
       const { envLocked, ...rest } = s;
       const body = { ...rest, spotify: { clientId: s.spotify.clientId, clientSecret: s.spotify.clientSecret } };
-      if (rest.adminPin && rest.adminPin !== '••••••••') try { sessionStorage.setItem('np.pin', rest.adminPin); } catch { /* ignore */ }
       setS(await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) }));
+      // Only after the save: this request still has to authenticate with the PIN being replaced.
+      if (rest.adminPin !== MASK) try { rest.adminPin ? sessionStorage.setItem('np.pin', rest.adminPin) : sessionStorage.removeItem('np.pin'); } catch { /* ignore */ }
       if (!quiet) setBanner('Saved.');
       onSaved();
       return true;
@@ -70,7 +74,7 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
   };
 
   const connectSpotify = async () => {
-    await save();
+    if (!(await save())) return;
     let p = '';
     try { p = sessionStorage.getItem('np.pin') ?? ''; } catch { /* ignore */ }
     location.href = '/api/auth/spotify/login' + (p ? `?pin=${encodeURIComponent(p)}` : '');
@@ -104,8 +108,9 @@ export function Settings({ config, onClose, onSaved }: { config: PublicConfig; o
           <input type="checkbox" checked={Boolean(v)} onChange={(e) => set(path, e.target.checked)} />
         ) : (
           <input type={type} value={v ?? ''} placeholder={placeholder} disabled={Boolean(env && locked(env))}
-            onChange={(e) => set(path, type === 'number' ? Number(e.target.value) : e.target.value)}
-            onFocus={(e) => { if (e.target.value === '••••••••') set(path, ''); }} />
+            onChange={(e) => { focusCleared.current.delete(path); set(path, type === 'number' ? Number(e.target.value) : e.target.value); }}
+            onFocus={(e) => { if (e.target.value === MASK) { focusCleared.current.add(path); set(path, ''); } }}
+            onBlur={() => { if (focusCleared.current.delete(path)) set(path, MASK); }} />
         )}
         {hint && <small>{hint}</small>}
       </label>

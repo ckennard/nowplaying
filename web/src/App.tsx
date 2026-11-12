@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, control, setPin } from './lib/api';
-import { useActivity, useLiveState, useLocalStorage, useProgress, useWakeLock } from './lib/hooks';
+import { useActivity, useLiveState, useLocalStorage, useWakeLock } from './lib/hooks';
 import { css, DEFAULT_PALETTE, extractPalette, type Palette } from './lib/palette';
+import { toggleCommand } from './lib/playback';
 import { Controls, type Panel } from './overlays/Controls';
 import { SidePanel } from './overlays/SidePanel';
 import { SourceSwitcher } from './overlays/SourceSwitcher';
 import { Settings } from './settings/Settings';
-import type { PublicConfig, VizMode } from './types';
+import type { ControlCommand, PublicConfig, VizMode } from './types';
 import { Idle } from './views/Idle';
 import { NowPlayingView } from './views/NowPlayingView';
 import { mic } from './viz/mic';
@@ -33,6 +34,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [palette, setPalette] = useState<Palette>(DEFAULT_PALETTE);
   const kick = useRef(0);
+  const pending = useRef(0);
 
   const { active: chromeVisible } = useActivity(ui?.overlayTimeoutSec ?? 6);
   const { active: panelAlive } = useActivity(ui?.panelTimeoutSec ?? 45);
@@ -40,7 +42,6 @@ export function App() {
   useWakeLock(ui?.wakeLock ?? true);
 
   const np = state?.active ?? null;
-  const progress = useProgress(np, clockOffset);
 
   // Palette from album art
   const art = np?.track.artUrl;
@@ -56,13 +57,14 @@ export function App() {
     window.setTimeout(() => setToast((t) => (t === m ? null : t)), 4500);
   }, []);
 
-  const send = useCallback(async (cmd: { type: string; [k: string]: unknown }) => {
+  const send = useCallback(async (cmd: ControlCommand) => {
     if (!np) return;
     if (new URLSearchParams(location.search).has('demo')) return showToast(`Demo mode: ${cmd.type} ignored`);
+    pending.current++;
     setBusy(true);
     try { await control(cmd, np.source); }
     catch (e: any) { showToast(e.message); }
-    finally { setBusy(false); }
+    finally { if (--pending.current === 0) setBusy(false); } // overlapping commands (e.g. volume) stay busy until the last one
   }, [np, showToast]);
 
   const toggleMic = useCallback(async () => {
@@ -83,17 +85,24 @@ export function App() {
   }, []);
 
   const openSettings = useCallback(() => { setSettingsOpen(true); history.replaceState(null, '', '#settings'); }, []);
-  const closeSettings = useCallback(() => { setSettingsOpen(false); history.replaceState(null, '', location.pathname); loadConfig(); }, [loadConfig]);
+  const closeSettings = useCallback(() => { setSettingsOpen(false); history.replaceState(null, '', location.pathname + location.search); loadConfig(); }, [loadConfig]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (settingsOpen || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // Transport keys follow the same rules as the buttons: one command at a time, no key auto-repeat.
+      const idle = !busy && !e.repeat;
       switch (e.key.toLowerCase()) {
-        case ' ': e.preventDefault(); if (np) { const t = np.state === 'playing' ? 'pause' : 'play'; if (np.capabilities[t]) send({ type: t }); } break;
-        case 'arrowright': if (np?.capabilities.next) send({ type: 'next' }); break;
-        case 'arrowleft': if (np?.capabilities.previous) send({ type: 'previous' }); break;
+        case ' ': {
+          e.preventDefault();
+          const toggle = toggleCommand(np);
+          if (idle && toggle.enabled) send({ type: toggle.type });
+          break;
+        }
+        case 'arrowright': if (idle && np?.capabilities.next) send({ type: 'next' }); break;
+        case 'arrowleft': if (idle && np?.capabilities.previous) send({ type: 'previous' }); break;
         case 'q': setPanel((p) => (p === 'queue' ? null : 'queue')); break;
         case 'i': setPanel((p) => (p === 'details' ? null : 'details')); break;
         case 'l': setLyrics(!lyrics); break;
@@ -105,7 +114,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [np, send, settingsOpen, lyrics, setLyrics, cycleViz, toggleMic, fullscreen]);
+  }, [np, busy, send, settingsOpen, lyrics, setLyrics, cycleViz, toggleMic, fullscreen]);
 
   const pin = useCallback((p: 'spotify' | 'plex' | null) => { setPin(p).catch((e) => showToast(e.message)); }, [showToast]);
 
@@ -122,7 +131,7 @@ export function App() {
       <Visualizer mode={np ? viz : 'aurora'} palette={palette} artUrl={art} micOn={micOn} onKick={(k) => (kick.current = k)} />
       <div className="drift">
         {np ? (
-          <NowPlayingView np={np} progressMs={progress} showLyrics={lyrics} kickRef={kick} onSeek={(ms) => send({ type: 'seek', positionMs: ms })} />
+          <NowPlayingView np={np} clockOffset={clockOffset} showLyrics={lyrics} kickRef={kick} onSeek={(ms) => send({ type: 'seek', positionMs: ms })} />
         ) : (
           <Idle history={state?.history ?? []} needsSetup={Boolean(config?.needsSetup)} onSettings={openSettings} />
         )}

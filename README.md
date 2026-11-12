@@ -34,7 +34,7 @@ Open `/?demo` to preview the UI with a fake track, or `/?demo=idle` for the idle
 3. The template turns on Unraid's built-in **Tailscale** integration with **Serve**, so the app is published at `https://nowplaying.<your-tailnet>.ts.net`. On first start, open the container log, follow the Tailscale login link, and approve the node. HTTPS must be enabled for your tailnet (Tailscale admin → DNS → HTTPS Certificates).
 4. Open the `https://` address, then go to **Settings** (gear icon).
 
-Updates: every push to `main` publishes `ghcr.io/ckennard/nowplaying:latest`, and Unraid's Docker page shows **update ready** like any other container. Settings live in `/config` and survive updates.
+Updates: every push to `main` publishes `ghcr.io/ckennard/nowplaying:latest`, and Unraid's Docker page shows **update ready** like any other container. Settings live in `/config` and survive updates. Open display tabs reload themselves once the updated container is running, so there is no need to refresh the screen by hand.
 
 ## Settings
 

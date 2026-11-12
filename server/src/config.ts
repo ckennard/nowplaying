@@ -50,6 +50,22 @@ function deepMerge<T>(base: T, patch: unknown): T {
   return out;
 }
 
+const VIZ_MODES: Settings['ui']['defaultViz'][] = ['aurora', 'art', 'spectrum', 'off'];
+const clamp = (v: number, lo: number, hi: number, fallback: number) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : fallback);
+
+/** Keeps display settings usable: an empty number field posts 0, which would hide the controls instantly. */
+export function sanitize(s: Settings): Settings {
+  return {
+    ...s,
+    ui: {
+      ...s.ui,
+      overlayTimeoutSec: clamp(s.ui.overlayTimeoutSec, 2, 600, defaults.ui.overlayTimeoutSec),
+      panelTimeoutSec: clamp(s.ui.panelTimeoutSec, 5, 3600, defaults.ui.panelTimeoutSec),
+      defaultViz: VIZ_MODES.includes(s.ui.defaultViz) ? s.ui.defaultViz : defaults.ui.defaultViz,
+    },
+  };
+}
+
 /** Environment variables take precedence over the settings file (useful for template-driven installs). */
 function applyEnv(s: Settings): Settings {
   const e = process.env;
@@ -69,7 +85,7 @@ function applyEnv(s: Settings): Settings {
 export async function loadSettings(): Promise<Settings> {
   try {
     const raw = JSON.parse(await fs.readFile(FILE, 'utf8'));
-    current = deepMerge(structuredClone(defaults), raw);
+    current = sanitize(deepMerge(structuredClone(defaults), raw));
   } catch (err: any) {
     if (err?.code !== 'ENOENT') console.error('[config] failed to read settings, using defaults:', err.message);
     current = structuredClone(defaults);
@@ -83,7 +99,7 @@ export function settings(): Settings {
 
 let writeChain: Promise<void> = Promise.resolve();
 export function updateSettings(patch: unknown): Promise<Settings> {
-  current = deepMerge(current, patch);
+  current = sanitize(deepMerge(current, patch));
   const snapshot = JSON.stringify(current, null, 2);
   writeChain = writeChain.then(async () => {
     await fs.mkdir(CONFIG_DIR, { recursive: true });
